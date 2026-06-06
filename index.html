@@ -227,7 +227,8 @@
                     breakTime: (formData.type === 'ツアー' || formData.type === '手入力') ? '0' : formData.breakTime,
                     hours: calc.hours,
                     guests: calc.guests,
-                    amount: calc.amount
+                    amount: calc.amount,
+                    manualLabel: formData.type === '手入力' ? (formData.manualLabel || '') : ''
                 };
                 setRecords([newRecord, ...records]);
                 setIsSuccess(true);
@@ -444,16 +445,19 @@
                                                     </div>
                                                 </div>
                                             ) : formData.type === '手入力' ? (
-                                                <div>
-                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>金額（円）</label>
-                                                    <div className="flex items-center gap-4">
-                                                        <span className="font-bold text-xl" style={{color: '#a06040'}}>¥</span>
-                                                        <input type="number" style={inputStyle} className={inputClass + ' text-center text-xl'} value={formData.manualAmount} onChange={(e) => setFormData({...formData, manualAmount: e.target.value})} min="0" placeholder="例：150000" />
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <label className="block text-[10px] font-black uppercase mb-1 tracking-widest" style={{color: '#a06040'}}>内容（自分用。請求書には反映しません）</label>
+                                                        <input type="text" style={inputStyle} className={inputClass} value={formData.manualLabel || ''} onChange={(e) => setFormData({...formData, manualLabel: e.target.value})} placeholder="例：出張費" />
                                                     </div>
-                                                    <p className="text-[10px] mt-1" style={{color: '#a06040'}}>月額・固定額など自由に入力してね</p>
-<input type="text" style={inputStyle} className={inputClass} value={formData.manualLabel || ''} onChange={(e) => setFormData({...formData, manualLabel: e.target.value})} placeholder="例：5月分 月額報酬" />
+                                                    <div>
+                                                        <label className="block text-[10px] font-black uppercase mb-1 tracking-widest" style={{color: '#a06040'}}>金額（円）</label>
+                                                        <div className="flex items-center gap-4">
+                                                            <span className="font-bold text-xl" style={{color: '#a06040'}}>¥</span>
+                                                            <input type="number" style={inputStyle} className={inputClass + ' text-center text-xl'} value={formData.manualAmount} onChange={(e) => setFormData({...formData, manualAmount: e.target.value})} min="0" placeholder="例：150000" />
+                                                        </div>
+                                                    </div>
                                                 </div>
-
                                             ) : (
                                                 <div>
                                                     <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>休憩時間（分）</label>
@@ -494,7 +498,7 @@
                                         <div className="text-center md:text-left">
                                             <p className="text-[10px] font-black uppercase mb-1 tracking-widest" style={{color: '#a08820'}}>今回の実績</p>
                                             <p className="text-3xl font-black tracking-tight" style={{color: '#5a4a10'}}>
-                                                {formData.type === 'ツアー' ? `${currentCalculation.guests}名` : formData.type === '手入力' ? '手入力' : `${currentCalculation.hours || 1}時間`}
+                                                {formData.type === 'ツアー' ? `${currentCalculation.guests}名` : formData.type === '手入力' ? '手入力' : `${currentCalculation.hours}時間`}
                                             </p>
                                         </div>
                                         <div className="text-center md:text-right">
@@ -563,7 +567,7 @@
                                                     <div className="flex items-center gap-3">
                                                         <span className={`font-black px-4 py-1 rounded-full ${r.type === 'ツアー' ? 'tag-tour' : 'tag-work'}`} style={{fontSize: '0.85rem'}}>{r.type}</span>
                                                     </div>
-                                                    <p className="text-xs mt-2 font-medium" style={{color: '#a06040'}}>{r.date} | {r.type === 'ツアー' ? `${r.guests}名` : r.type === '手入力' ? '手入力' : `${r.startTime}〜${r.endTime}`}</p>
+                                                    <p className="text-xs mt-2 font-medium" style={{color: '#a06040'}}>{r.date} | {r.type === 'ツアー' ? `ツアーガイド ${r.guests}名` : r.type === '手入力' ? (r.manualLabel || '手入力') : `${r.startTime}〜${r.endTime}`}</p>
                                                     {r.registeredAt && <p className="text-[10px] mt-1" style={{color: '#c4a09a'}}>登録：{r.registeredAt}</p>}
                                                 </div>
                                                 <div className="text-right">
@@ -612,8 +616,8 @@
                                                 <tr key={r.id} className="border-b transition" style={{borderColor: '#fdeede'}}>
                                                     <td className="py-4 px-2 font-bold" style={{color: '#7c3d1a'}}>{r.date.split('-').slice(1).join('/')}</td>
                                                     <td className="py-4 text-xs font-black" style={{color: '#a06040'}}>{r.type}</td>
-                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド' : `${r.startTime}〜${r.endTime}`}</td>
-                                                    <td className="py-4 text-right font-mono font-bold" style={{color: '#7c3d1a'}}>{r.type === 'ツアー' ? `${r.guests}名` : `${r.hours}h`}</td>
+                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド' : r.type === '手入力' ? (r.manualLabel || '手入力') : `${r.startTime}〜${r.endTime}`}</td>
+                                                    <td className="py-4 text-right font-mono font-bold" style={{color: '#7c3d1a'}}>{r.type === 'ツアー' ? `${r.guests}名` : r.type === '手入力' ? '1' : `${r.hours || 1}h`}</td>
                                                     <td className="py-4 text-right font-black italic" style={{color: '#7c3d1a'}}>¥{r.amount.toLocaleString()}</td>
                                                 </tr>
                                             ))}
