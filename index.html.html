@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>勤怠管理・請求書作成 2026</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'M PLUS Rounded 1c', sans-serif; background: #fff4ed; }
+        :root {
+            --accent: #e07840;
+            --accent-light: #f9d4b4;
+            --accent-dark: #c05c20;
+            --bg-warm: #fff4ed;
+            --bg-card: #fffaf7;
+            --border: #f9d4b4;
+        }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; margin: 0; padding: 0; }
+            @page { size: A4; margin: 12mm; }
+            #invoice-box { 
+                box-shadow: none !important; 
+                border: none !important; 
+                padding: 0 !important; 
+                margin: 0 !important;
+                min-height: unset !important;
+                font-size: 11px;
+            }
+        }
+        .animate-success { animation: success-pulse 0.5s ease-out; }
+        @keyframes success-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+        .nav-btn-active { background: linear-gradient(135deg, #e07840, #f09060); color: white; }
+        .save-btn { background: linear-gradient(135deg, #e07840, #f09060); }
+        .save-btn:hover { background: linear-gradient(135deg, #c05c20, #e07840); }
+        .header-bg { background: linear-gradient(135deg, #e07840, #f0a060); }
+        .total-bar { background: linear-gradient(135deg, #c05c20, #e07840); }
+        .tag-tour { background: #fff4ed; color: #7c3d1a; }
+        .tag-work { background: #fde8d0; color: #c05c20; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const HOURLY_RATE = 1200;
+        const TOUR_RATE_PER_PERSON = 1000;
+        const BANK_TYPES = ['普通', '当座'];
+        const HOURS = Array.from({ length: 18 }, (_, i) => String(i + 6).padStart(2, '0'));
+        const MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+
+        const App = () => {
+            const [records, setRecords] = useState(() => {
+                const saved = localStorage.getItem('attendance_records_v4');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [currentView, setCurrentView] = useState('input');
+            const [isSuccess, setIsSuccess] = useState(false);
+
+            const [profile, setProfile] = useState(() => {
+                const saved = localStorage.getItem('staff_profile_v1');
+                return saved ? JSON.parse(saved) : {
+                    name: '', zip: '', address: '', tel: '',
+                    bankName: '', branchName: '', bankType: '普通', bankNumber: '', bankHolder: ''
+                };
+            });
+            const [profileSaved, setProfileSaved] = useState(false);
+            const [zipStatus, setZipStatus] = useState('');
+            const [sendStatus, setSendStatus] = useState(''); // '' | 'sending' | 'ok' | 'error'
+            const GAS_URL = localStorage.getItem('gas_url') || '';
+
+            const handleSendInvoice = async () => {
+                if (!GAS_URL) {
+                    alert('GAS URLが設定されていません。請求書画面の設定から入力してください。');
+                    return;
+                }
+                if (!profile.name) {
+                    alert('プロフィールに氏名を登録してください。');
+                    return;
+                }
+                if (invoiceData.filtered.length === 0) {
+                    alert('送信するデータがありません。');
+                    return;
+                }
+
+                setSendStatus('sending');
+
+                // 勤務形態別に集計
+                const byType = { フロント: {hours:0, amount:0}, カフェ: {hours:0, amount:0}, ツアー: {guests:0, amount:0}, 物販: {hours:0, amount:0} };
+                invoiceData.filtered.forEach(r => {
+                    if (r.type === 'ツアー') {
+                        byType.ツアー.guests += r.guests || 0;
+                        byType.ツアー.amount += r.amount;
+                    } else if (byType[r.type]) {
+                        byType[r.type].hours += parseFloat(r.hours || 0);
+                        byType[r.type].amount += r.amount;
+                    }
+                });
+
+                const payload = {
+                    name: profile.name,
+                    month: selectedMonth.replace('-', '年') + '月',
+                    frontHours:  Math.round(byType.フロント.hours * 100) / 100,
+                    frontAmount: byType.フロント.amount,
+                    cafeHours:   Math.round(byType.カフェ.hours * 100) / 100,
+                    cafeAmount:  byType.カフェ.amount,
+                    tourGuests:  byType.ツアー.guests,
+                    tourAmount:  byType.ツアー.amount,
+                    salesHours:  Math.round(byType.物販.hours * 100) / 100,
+                    salesAmount: byType.物販.amount,
+                    totalHours:  Math.round(invoiceData.totalHours * 100) / 100,
+                    totalAmount: invoiceData.totalAmount,
+                    // プロフィール情報（PDF生成用）
+                    zip:         profile.zip,
+                    address:     profile.address,
+                    tel:         profile.tel,
+                    bankName:    profile.bankName,
+                    branchName:  profile.branchName,
+                    bankType:    profile.bankType,
+                    bankNumber:  profile.bankNumber,
+                    bankHolder:  profile.bankHolder
+                };
+
+                try {
+                    await fetch(GAS_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    setSendStatus('ok');
+                    setTimeout(() => setSendStatus(''), 4000);
+                } catch (err) {
+                    setSendStatus('error');
+                    setTimeout(() => setSendStatus(''), 4000);
+                }
+            };
+
+            // 勤務形態ごとの時間を独立管理
+            const [timeByType, setTimeByType] = useState(() => {
+                const saved = localStorage.getItem('time_by_type_v1');
+                return saved ? JSON.parse(saved) : {
+                    フロント: { startH: '09', startM: '00', endH: '17', endM: '00' },
+                    カフェ:   { startH: '09', startM: '00', endH: '17', endM: '00' },
+                    物販:     { startH: '09', startM: '00', endH: '17', endM: '00' },
+                };
+            });
+
+            const [formData, setFormData] = useState({
+                date: new Date().toISOString().split('T')[0],
+                name: '',
+                type: 'フロント',
+                startH: '09', startM: '00',
+                endH: '17', endM: '00',
+                breakTime: '0',
+                tourGuests: '1',
+                manualAmount: '0'
+            });
+
+            const [selectedMonth, setSelectedMonth] = useState(() => {
+                const now = new Date();
+                return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            });
+
+            useEffect(() => {
+                localStorage.setItem('staff_profile_v1', JSON.stringify(profile));
+            }, [profile]);
+
+            useEffect(() => {
+                localStorage.setItem('attendance_records_v4', JSON.stringify(records));
+            }, [records]);
+
+            useEffect(() => {
+                localStorage.setItem('time_by_type_v1', JSON.stringify(timeByType));
+            }, [timeByType]);
+
+            // プロフィールの名前が変わったらformDataにも反映
+            useEffect(() => {
+                if (profile.name) {
+                    setFormData(f => ({...f, name: profile.name}));
+                }
+            }, [profile.name]);
+
+            const handleSaveProfile = () => {
+                setProfileSaved(true);
+                setTimeout(() => setProfileSaved(false), 2000);
+            };
+
+            const currentCalculation = useMemo(() => {
+                if (formData.type === 'ツアー') {
+                    const count = parseInt(formData.tourGuests || 0);
+                    return { hours: null, guests: count, amount: count * TOUR_RATE_PER_PERSON };
+                } else if (formData.type === '手入力') {
+                    return { hours: null, guests: null, amount: parseInt(formData.manualAmount || 0) };
+                } else {
+                    const start = new Date(`2000/01/01 ${formData.startH}:${formData.startM}`);
+                    const end = new Date(`2000/01/01 ${formData.endH}:${formData.endM}`);
+                    let diffMs = end - start;
+                    if (diffMs < 0) return { hours: "0.00", amount: 0 };
+                    let diffMin = (diffMs / (1000 * 60)) - parseInt(formData.breakTime || 0);
+                    if (diffMin < 0) diffMin = 0;
+                    const roundedMin = Math.floor(diffMin / 5) * 5;
+                    const hoursVal = roundedMin / 60;
+                    return { hours: hoursVal.toFixed(2), guests: null, amount: Math.floor(hoursVal * HOURLY_RATE) };
+                }
+            }, [formData]);
+
+            const handleAddRecord = () => {
+                const calc = currentCalculation;
+                const newRecord = {
+                    id: Date.now(),
+                    date: formData.date,
+                    registeredAt: new Date().toLocaleString('ja-JP'), // 登録日時
+                    name: formData.name || profile.name,
+                    type: formData.type,
+                    startTime: (formData.type === 'ツアー' || formData.type === '手入力') ? '-' : `${formData.startH}:${formData.startM}`,
+                    endTime: (formData.type === 'ツアー' || formData.type === '手入力') ? '-' : `${formData.endH}:${formData.endM}`,
+                    breakTime: (formData.type === 'ツアー' || formData.type === '手入力') ? '0' : formData.breakTime,
+                    hours: calc.hours,
+                    guests: calc.guests,
+                    amount: calc.amount
+                };
+                setRecords([newRecord, ...records]);
+                setIsSuccess(true);
+                setTimeout(() => setIsSuccess(false), 2000);
+            };
+
+            const invoiceData = useMemo(() => {
+                const myName = profile.name;
+                const filtered = records.filter(r => r.name === myName && r.date.startsWith(selectedMonth))
+                    .sort((a, b) => new Date(a.date) - new Date(b.date));
+                const totalAmount = filtered.reduce((sum, r) => sum + r.amount, 0);
+                const subTotal = Math.round(totalAmount / 1.1);
+                return {
+                    filtered,
+                    totalAmount,
+                    subTotal,
+                    tax: totalAmount - subTotal,
+                    totalHours: filtered.reduce((sum, r) => sum + (r.hours ? parseFloat(r.hours) : 0), 0)
+                };
+            }, [records, profile.name, selectedMonth]);
+
+            const inputClass = "w-full p-4 border-2 rounded-2xl font-bold outline-none transition focus:border-[#e07840]";
+            const inputStyle = { background: '#fff4ed', borderColor: '#f9d4b4' };
+            const inputFocusStyle = {};
+
+            const navItems = [
+                {id: 'profile', label: '👤 登録'},
+                {id: 'input', label: '✏️ 入力'},
+                {id: 'history', label: '📋 履歴'},
+                {id: 'detail', label: '🔍 詳細'},
+                {id: 'invoice', label: '📄 請求書'}
+            ];
+
+            return (
+                <div className="min-h-screen pb-24" style={{background: '#fff4ed'}}>
+                    {/* Header */}
+                    <header className="header-bg text-white p-4 shadow-lg sticky top-0 z-20 no-print">
+                        <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div>
+                                <h1 className="text-xl font-black tracking-tight">勤怠管理・請求システム</h1>
+                                {profile.name && <p className="text-xs opacity-60 mt-0.5">{profile.name} さん</p>}
+                            </div>
+                            <nav className="flex flex-wrap gap-1 p-1 rounded-xl" style={{background: 'rgba(255,255,255,0.1)'}}>
+                                {navItems.map((v) => (
+                                    <button
+                                        key={v.id}
+                                        onClick={() => setCurrentView(v.id)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${currentView === v.id ? 'nav-btn-active' : 'text-white/60 hover:text-white'}`}
+                                    >
+                                        {v.label}
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+                    </header>
+
+                    <main className="max-w-4xl mx-auto p-4">
+
+                        {/* ===== プロフィール ===== */}
+                        {currentView === 'profile' && (
+                            <div className="space-y-6">
+                                <div className="rounded-3xl shadow-xl overflow-hidden" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                    <div className="px-8 py-6 border-b" style={{background: '#fdeede', borderColor: '#f9d4b4'}}>
+                                        <h2 className="font-black text-sm uppercase tracking-widest" style={{color: '#7c3d1a'}}>個人情報・振込先登録</h2>
+                                        <p className="text-xs mt-1" style={{color: '#e07840'}}>ここに入力した情報が請求書に自動反映されます</p>
+                                    </div>
+                                    <div className="p-8 space-y-8">
+                                        <div>
+                                            <h3 className="text-[10px] font-black uppercase tracking-widest mb-4" style={{color: '#e07840'}}>個人情報</h3>
+                                            <div className="space-y-4">
+                                                {/* 氏名 */}
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>氏名</label>
+                                                    <input type="text" style={inputStyle} className={inputClass} value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} placeholder="例：山田 花子" />
+                                                </div>
+                                                {/* 郵便番号 */}
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>郵便番号</label>
+                                                    <div className="flex gap-3 items-center">
+                                                        <input
+                                                            type="text"
+                                                            style={inputStyle}
+                                                            className={inputClass}
+                                                            value={profile.zip}
+                                                            onChange={(e) => setProfile({...profile, zip: e.target.value})}
+                                                            placeholder="例：123-4567"
+                                                            maxLength="8"
+                                                        />
+                                                        <button
+                                                            onClick={async () => {
+                                                                const raw = profile.zip.replace(/-/g, '');
+                                                                if (raw.length !== 7) return;
+                                                                setZipStatus('loading');
+                                                                try {
+                                                                    const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${raw}`);
+                                                                    const data = await res.json();
+                                                                    if (data.results) {
+                                                                        const r = data.results[0];
+                                                                        setProfile(p => ({...p, address: r.address1 + r.address2 + r.address3}));
+                                                                        setZipStatus('ok');
+                                                                    } else {
+                                                                        setZipStatus('err');
+                                                                    }
+                                                                } catch {
+                                                                    setZipStatus('err');
+                                                                }
+                                                                setTimeout(() => setZipStatus(''), 3000);
+                                                            }}
+                                                            className="whitespace-nowrap px-5 py-3 rounded-2xl text-sm font-black text-white transition active:scale-95 save-btn"
+                                                            style={{minWidth: '90px'}}
+                                                        >
+                                                            {zipStatus === 'loading' ? '検索中…' : zipStatus === 'ok' ? '✓ OK' : zipStatus === 'err' ? '❌ 未発見' : '住所を検索'}
+                                                        </button>
+                                                    </div>
+                                                    <p className="text-[10px] mt-1" style={{color: '#f9b98a'}}>7桁入力後「住所を検索」を押してね</p>
+                                                </div>
+                                                {/* 住所 */}
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>住所</label>
+                                                    <input type="text" style={inputStyle} className={inputClass} value={profile.address} onChange={(e) => setProfile({...profile, address: e.target.value})} placeholder="番地・建物名まで入力してね" />
+                                                </div>
+                                                {/* 電話番号 */}
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>電話番号</label>
+                                                    <input type="tel" style={inputStyle} className={inputClass} value={profile.tel} onChange={(e) => setProfile({...profile, tel: e.target.value})} placeholder="例：090-1234-5678" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-6 border-t-2" style={{borderColor: '#f9d4b4'}}>
+                                            <h3 className="text-[10px] font-black uppercase tracking-widest mb-4" style={{color: '#e07840'}}>振込先情報</h3>
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>銀行名</label>
+                                                        <input type="text" style={inputStyle} className={inputClass} value={profile.bankName} onChange={(e) => setProfile({...profile, bankName: e.target.value})} placeholder="例：○○銀行" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>支店名</label>
+                                                        <input type="text" style={inputStyle} className={inputClass} value={profile.branchName} onChange={(e) => setProfile({...profile, branchName: e.target.value})} placeholder="例：△△支店" />
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>口座種別</label>
+                                                        <div className="flex p-1 rounded-2xl" style={{background: '#f9d4b4'}}>
+                                                            {BANK_TYPES.map(t => (
+                                                                <button key={t} onClick={() => setProfile({...profile, bankType: t})} className={`flex-1 py-3 text-sm font-black rounded-xl transition`} style={profile.bankType === t ? {background: 'white', color: '#e07840', boxShadow: '0 1px 4px rgba(0,0,0,0.1)'} : {color: '#a06040'}}>{t}</button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>口座番号</label>
+                                                        <input type="text" style={inputStyle} className={inputClass} value={profile.bankNumber} onChange={(e) => setProfile({...profile, bankNumber: e.target.value})} placeholder="例：1234567" />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>口座名義（カナ）</label>
+                                                    <input type="text" style={inputStyle} className={inputClass} value={profile.bankHolder} onChange={(e) => setProfile({...profile, bankHolder: e.target.value})} placeholder="例：ヤマダ ハナコ" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button onClick={handleSaveProfile} className={`w-full py-5 rounded-2xl font-black text-xl text-white shadow-xl transition-all active:scale-95 ${profileSaved ? '' : 'save-btn'}`} style={profileSaved ? {background: '#5b9e6e'} : {}}>
+                                            {profileSaved ? '✓ 保存しました' : '保存する'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ===== 入力 ===== */}
+                        {currentView === 'input' && (
+                            <div className={`rounded-3xl shadow-xl overflow-hidden ${isSuccess ? 'animate-success' : ''}`} style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                <div className="px-8 py-6 border-b" style={{background: '#fdeede', borderColor: '#f9d4b4'}}>
+                                    <h2 className="font-black text-sm uppercase tracking-widest" style={{color: '#7c3d1a'}}>勤務データ登録</h2>
+                                </div>
+                                <div className="p-8 space-y-8">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>日付</label>
+                                                <input type="date" style={inputStyle} className={inputClass} value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>氏名</label>
+                                                <input type="text" style={inputStyle} className={inputClass} value={formData.name || profile.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder={profile.name || 'プロフィールから自動入力'} />
+                                                {!profile.name && <p className="text-[10px] mt-1" style={{color: '#e07840'}}>※ プロフィールに氏名を登録すると自動入力されます</p>}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>勤務形態</label>
+                                                <div className="flex p-1 rounded-2xl flex-wrap gap-1" style={{background: '#f9d4b4'}}>
+                                                    {['フロント', 'カフェ', 'ツアー', '物販', '手入力'].map(t => (
+                                                        <button key={t} onClick={() => {
+                                                            // 今の時間を保存
+                                                            if (['フロント','カフェ','物販'].includes(formData.type)) {
+                                                                setTimeByType(prev => ({...prev, [formData.type]: { startH: formData.startH, startM: formData.startM, endH: formData.endH, endM: formData.endM }}));
+                                                            }
+                                                            // 切り替え先の時間を読み込む
+                                                            const savedTime = ['フロント','カフェ','物販'].includes(t) ? timeByType[t] : { startH: formData.startH, startM: formData.startM, endH: formData.endH, endM: formData.endM };
+                                                            setFormData({...formData, type: t, ...savedTime});
+                                                        }} className="flex-1 py-3 text-xs font-black rounded-xl transition" style={formData.type === t ? {background: 'white', color: '#e07840', boxShadow: '0 1px 4px rgba(0,0,0,0.1)'} : {color: '#a06040'}}>{t}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            {formData.type === 'ツアー' ? (
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>ツアー参加人数</label>
+                                                    <div className="flex items-center gap-4">
+                                                        <input type="number" style={inputStyle} className={inputClass + ' text-center text-xl'} value={formData.tourGuests} onChange={(e) => setFormData({...formData, tourGuests: e.target.value})} min="1" />
+                                                        <span className="font-bold text-sm" style={{color: '#a06040'}}>名様</span>
+                                                    </div>
+                                                </div>
+                                            ) : formData.type === '手入力' ? (
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>金額（円）</label>
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="font-bold text-xl" style={{color: '#a06040'}}>¥</span>
+                                                        <input type="number" style={inputStyle} className={inputClass + ' text-center text-xl'} value={formData.manualAmount} onChange={(e) => setFormData({...formData, manualAmount: e.target.value})} min="0" placeholder="例：150000" />
+                                                    </div>
+                                                    <p className="text-[10px] mt-1" style={{color: '#a06040'}}>月額・固定額など自由に入力してね</p>
+<input type="text" style={inputStyle} className={inputClass} value={formData.manualLabel || ''} onChange={(e) => setFormData({...formData, manualLabel: e.target.value})} placeholder="例：5月分 月額報酬" />
+                                                </div>
+
+                                            ) : (
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>休憩時間（分）</label>
+                                                    <input type="number" style={inputStyle} className={inputClass} value={formData.breakTime} onChange={(e) => setFormData({...formData, breakTime: e.target.value})} placeholder="0" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {(formData.type !== 'ツアー' && formData.type !== '手入力') && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t-2" style={{borderColor: '#f9d4b4'}}>
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase mb-3 tracking-widest" style={{color: '#a06040'}}>開始時間</label>
+                                                <div className="flex gap-2">
+                                                    <select value={formData.startH} onChange={(e) => setFormData({...formData, startH: e.target.value})} className="flex-1 p-4 rounded-2xl border-2 text-center font-bold outline-none" style={inputStyle}>
+                                                        {HOURS.map(h => <option key={h} value={h}>{h}時</option>)}
+                                                    </select>
+                                                    <select value={formData.startM} onChange={(e) => setFormData({...formData, startM: e.target.value})} className="flex-1 p-4 rounded-2xl border-2 text-center font-bold outline-none" style={inputStyle}>
+                                                        {MINUTES.map(m => <option key={m} value={m}>{m}分</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black uppercase mb-3 tracking-widest" style={{color: '#a06040'}}>終了時間</label>
+                                                <div className="flex gap-2">
+                                                    <select value={formData.endH} onChange={(e) => setFormData({...formData, endH: e.target.value})} className="flex-1 p-4 rounded-2xl border-2 text-center font-bold outline-none" style={inputStyle}>
+                                                        {HOURS.map(h => <option key={h} value={h}>{h}時</option>)}
+                                                    </select>
+                                                    <select value={formData.endM} onChange={(e) => setFormData({...formData, endM: e.target.value})} className="flex-1 p-4 rounded-2xl border-2 text-center font-bold outline-none" style={inputStyle}>
+                                                        {MINUTES.map(m => <option key={m} value={m}>{m}分</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="p-8 rounded-[2rem] flex flex-col md:flex-row justify-between items-center gap-4" style={{background: '#fffbe8', border: '2px solid #f5e8a0'}}>
+                                        <div className="text-center md:text-left">
+                                            <p className="text-[10px] font-black uppercase mb-1 tracking-widest" style={{color: '#a08820'}}>今回の実績</p>
+                                            <p className="text-3xl font-black tracking-tight" style={{color: '#5a4a10'}}>
+                                                {formData.type === 'ツアー' ? `${currentCalculation.guests}名` : formData.type === '手入力' ? '手入力' : `${currentCalculation.hours || 1}時間`}
+                                            </p>
+                                        </div>
+                                        <div className="text-center md:text-right">
+                                            <p className="text-[10px] font-black uppercase mb-1 tracking-widest" style={{color: '#a08820'}}>小計金額</p>
+                                            <p className="text-5xl font-black tracking-tighter" style={{color: '#5a4a10'}}>¥{currentCalculation.amount.toLocaleString()}</p>
+                                        </div>
+                                    </div>
+
+                                    <button onClick={handleAddRecord} disabled={isSuccess} className="w-full py-6 rounded-2xl font-black text-xl text-white shadow-2xl transition-all active:scale-95 flex justify-center items-center gap-3" style={isSuccess ? {background: '#5b9e6e'} : {background: 'linear-gradient(135deg, #e07840, #f09060)'}}>
+                                        {isSuccess ? "✓ 記録を保存しました" : "勤務を記録する"}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ===== 履歴 ===== */}
+                        {currentView === 'history' && (
+                            <div className="space-y-4">
+                                {/* 月選択 */}
+                                <div className="p-5 rounded-2xl flex items-center gap-4" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                    <label className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap" style={{color: '#a06040'}}>表示月</label>
+                                    <input type="month" className="flex-1 p-3 border-2 rounded-xl font-bold outline-none" style={{background: '#fff4ed', borderColor: '#f9d4b4'}} value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+                                    <button onClick={() => setSelectedMonth('')} className="text-[10px] font-black px-3 py-2 rounded-xl whitespace-nowrap" style={!selectedMonth ? {background: '#e07840', color: 'white'} : {background: '#f9d4b4', color: '#a06040'}}>全件</button>
+                                </div>
+
+                                {/* 件数・合計・一括削除 */}
+                                {(() => {
+                                    const shown = (selectedMonth
+                                        ? records.filter(r => r.date.startsWith(selectedMonth))
+                                        : records);
+                                    const total = shown.reduce((s, r) => s + r.amount, 0);
+                                    return shown.length > 0 && (
+                                        <div className="px-2 flex justify-between items-center">
+                                            <div className="flex items-center gap-4">
+                                                <span className="text-[10px] font-black uppercase tracking-widest" style={{color: '#a06040'}}>{shown.length}件</span>
+                                                <span className="font-black text-base" style={{color: '#7c3d1a'}}>合計 ¥{total.toLocaleString()}</span>
+                                            </div>
+                                            {selectedMonth && (
+                                                <button
+                                                    onClick={() => {
+                                                        if (window.confirm(`${selectedMonth}のデータを全件削除しますか？`)) {
+                                                            setRecords(records.filter(r => !r.date.startsWith(selectedMonth)));
+                                                        }
+                                                    }}
+                                                    className="text-xs underline"
+                                                    style={{color: '#f09060', background: 'none', border: 'none', cursor: 'pointer'}}
+                                                >
+                                                    🗑️ {selectedMonth}を一括削除
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* 履歴リスト */}
+                                {(() => {
+                                    const shown = (selectedMonth
+                                        ? records.filter(r => r.date.startsWith(selectedMonth))
+                                        : records
+                                    ).sort((a, b) => new Date(b.date) - new Date(a.date));
+                                    return shown.length === 0
+                                        ? <div className="p-20 text-center font-bold" style={{color: '#f9c8a0'}}>データがありません</div>
+                                        : shown.map(r => (
+                                            <div key={r.id} className="p-6 rounded-2xl shadow-sm flex justify-between items-center" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                                <div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`font-black px-4 py-1 rounded-full ${r.type === 'ツアー' ? 'tag-tour' : 'tag-work'}`} style={{fontSize: '0.85rem'}}>{r.type}</span>
+                                                    </div>
+                                                    <p className="text-xs mt-2 font-medium" style={{color: '#a06040'}}>{r.date} | {r.type === 'ツアー' ? `${r.guests}名` : r.type === '手入力' ? '手入力' : `${r.startTime}〜${r.endTime}`}</p>
+                                                    {r.registeredAt && <p className="text-[10px] mt-1" style={{color: '#c4a09a'}}>登録：{r.registeredAt}</p>}
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="font-black text-xl tracking-tighter" style={{color: '#7c3d1a'}}>¥{r.amount.toLocaleString()}</p>
+                                                    <button onClick={() => setRecords(records.filter(x => x.id !== r.id))} className="text-[10px] font-black hover:underline mt-1" style={{color: '#f09060', background: 'none', border: 'none', cursor: 'pointer'}}>削除</button>
+                                                </div>
+                                            </div>
+                                        ));
+                                })()}
+                            </div>
+                        )}
+
+                        {/* ===== 詳細確認 ===== */}
+                        {currentView === 'detail' && (
+                            <div className="space-y-6">
+                                <div className="p-8 rounded-3xl shadow-xl no-print" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                    <h2 className="text-xs font-black uppercase tracking-widest mb-6" style={{color: '#a06040'}}>勤務詳細確認（月別）</h2>
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="text-[10px] font-black uppercase mb-2 block tracking-widest" style={{color: '#a06040'}}>スタッフ名</label>
+                                            <div className="p-4 rounded-2xl border-2 font-bold" style={{background: '#fff4ed', borderColor: '#f9d4b4', color: '#7c3d1a'}}>
+                                                {profile.name || '（プロフィール未登録）'}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-black uppercase mb-2 block tracking-widest" style={{color: '#a06040'}}>対象月</label>
+                                            <input type="month" className="w-full p-4 border-2 rounded-2xl font-bold outline-none" style={{background: '#fff4ed', borderColor: '#f9d4b4'}} value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-8 rounded-3xl shadow-lg overflow-hidden" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                    <table className="w-full">
+                                        <thead>
+                                            <tr className="border-b-2 text-left text-[10px] uppercase font-black" style={{borderColor: '#f9d4b4', color: '#a06040'}}>
+                                                <th className="pb-4 px-2">日付</th>
+                                                <th className="pb-4">区分</th>
+                                                <th className="pb-4">内容</th>
+                                                <th className="pb-4 text-right">数量</th>
+                                                <th className="pb-4 text-right">小計</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="text-sm">
+                                            {invoiceData.filtered.map(r => (
+                                                <tr key={r.id} className="border-b transition" style={{borderColor: '#fdeede'}}>
+                                                    <td className="py-4 px-2 font-bold" style={{color: '#7c3d1a'}}>{r.date.split('-').slice(1).join('/')}</td>
+                                                    <td className="py-4 text-xs font-black" style={{color: '#a06040'}}>{r.type}</td>
+                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド' : `${r.startTime}〜${r.endTime}`}</td>
+                                                    <td className="py-4 text-right font-mono font-bold" style={{color: '#7c3d1a'}}>{r.type === 'ツアー' ? `${r.guests}名` : `${r.hours}h`}</td>
+                                                    <td className="py-4 text-right font-black italic" style={{color: '#7c3d1a'}}>¥{r.amount.toLocaleString()}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    <div className="mt-8 total-bar text-white p-6 rounded-2xl flex justify-between items-center">
+                                        <span className="text-xs font-black uppercase tracking-widest">月間合計実績</span>
+                                        <span className="text-2xl font-black italic">¥{invoiceData.totalAmount.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ===== 請求書 ===== */}
+                        {currentView === 'invoice' && (
+                            <div className="space-y-6">
+                                <div className="p-8 rounded-3xl shadow-xl no-print mb-6" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                    <h2 className="text-xs font-black uppercase tracking-widest mb-1" style={{color: '#a06040'}}>請求書発行設定</h2><div className="space-y-1">
+<p style={{color:'red', fontWeight:'bold', fontSize:'12px', marginTop:'1px'}}>⚠️ 提出期限：毎月10日</p>
+
+<div><label className="text-[10px] font-black uppercase tracking-widest block mb-2" style={{color: '#a06040'}}>対象月</label>
+                                            <input type="month" className="w-full p-3 border-2 rounded-xl font-bold outline-none" style={{background: '#fff4ed', borderColor: '#f9d4b4'}} value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} /></div>
+                                        <div>
+<label className="text-[10px] font-black uppercase tracking-widest block mb-2" style={{color: '#a06040'}}>GAS URL（管理者から受け取ったURLを貼ってね）</label>
+                                            <input type="url" className="w-full p-3 border-2 rounded-xl font-bold outline-none text-xs" style={{background: '#fff4ed', borderColor: '#f9d4b4'}} defaultValue={GAS_URL} onChange={(e) => localStorage.setItem('gas_url', e.target.value)} placeholder="https://script.google.com/macros/s/..." />
+                                        </div>
+                                    </div>
+                                    {!profile.name && <p className="text-xs font-bold mt-3" style={{color: '#f09060'}}>⚠ プロフィールに氏名を登録してください</p>}
+                                </div>
+
+                                {/* 請求書本体（印刷対象） */}
+                                <div id="invoice-box" className="bg-white p-10 md:p-16 shadow-2xl text-black rounded-sm" style={{border: '1px solid #f9d4b4', minHeight: '297mm'}}>
+
+                                    {/* タイトル行 */}
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <div style={{fontSize: '28px', fontWeight: '500', color: '#000000'}}>請求書</div>
+                                            <div style={{fontSize: '11px', color: '#666666', marginTop: '2px'}}>INVOICE</div>
+                                        </div>
+                                        <div style={{textAlign: 'right'}}>
+                                            <div style={{fontSize: '11px', color: '#666666', marginBottom: '3px'}}>発行日</div>
+                                            <div style={{fontWeight: '500', color: '#000000'}}>{new Date().toLocaleDateString('ja-JP')}</div>
+                                        </div>
+                                    </div>
+
+                                    <hr style={{border: 'none', borderTop: '0.5px solid #cccccc', margin: '14px 0'}} />
+
+                                    {/* 請求先・請求人 */}
+                                    <div className="flex justify-between mb-4">
+                                        <div>
+                                            <div style={{fontSize: '11px', color: '#666666', marginBottom: '3px'}}>請求先</div>
+                                            <div style={{fontSize: '18px', fontWeight: '500', color: '#000000'}}>株式会社イジュン 御中</div>
+                                            <div style={{fontSize: '12px', color: '#666666', marginTop: '8px'}}>下記の通り、ご請求申し上げます。</div>
+                                        </div>
+                                        <div style={{textAlign: 'right'}}>
+                                            <div style={{fontSize: '11px', color: '#666666', marginBottom: '3px'}}>請求人</div>
+                                            <div style={{fontWeight: '500', color: '#000000'}}>{profile.name || '（未登録）'}</div>
+                                            {profile.zip && <div style={{fontSize: '12px', color: '#666666'}}>〒{profile.zip}</div>}
+                                            {profile.address && <div style={{fontSize: '12px', color: '#666666'}}>{profile.address}</div>}
+                                            {profile.tel && <div style={{fontSize: '12px', color: '#666666'}}>TEL: {profile.tel}</div>}
+                                        </div>
+                                    </div>
+
+                                    {/* ご請求金額（大きく・目立つ） */}
+                                    <div style={{borderBottom: '2px solid #000000', paddingBottom: '10px', marginBottom: '16px', display: 'flex', alignItems: 'baseline', gap: '16px'}}>
+                                        <span style={{fontSize: '13px', color: '#000000', fontWeight: '500'}}>ご請求金額（税込）</span>
+                                        <span style={{fontSize: '32px', fontWeight: '700', color: '#000000', letterSpacing: '-0.5px'}}>¥{invoiceData.totalAmount.toLocaleString()}-</span>
+                                    </div>
+
+                                    {/* 明細テーブル */}
+                                    <table style={{width: '100%', borderCollapse: 'collapse', marginBottom: '12px'}}>
+                                        <thead>
+                                            <tr style={{borderBottom: '1px solid #000000'}}>
+                                                <th style={{fontSize: '11px', color: '#666666', fontWeight: '400', padding: '6px 4px', textAlign: 'left'}}>項目・内容</th>
+                                                <th style={{fontSize: '11px', color: '#666666', fontWeight: '400', padding: '6px 4px', textAlign: 'right'}}>単価（税抜）</th>
+                                                <th style={{fontSize: '11px', color: '#666666', fontWeight: '400', padding: '6px 4px', textAlign: 'right'}}>金額（税込）</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr style={{borderBottom: '0.5px solid #cccccc'}}>
+                                                <td style={{padding: '14px 4px', fontWeight: '500', color: '#000000'}}>
+                                                    {parseInt(selectedMonth.split('-')[1])}月分 運営協力費
+                                                </td>
+                                                <td style={{padding: '14px 4px', textAlign: 'right', color: '#000000'}}>
+                                                    ¥{invoiceData.subTotal.toLocaleString()}
+                                                </td>
+                                                <td style={{padding: '14px 4px', textAlign: 'right', fontWeight: '500', color: '#000000'}}>
+                                                    ¥{invoiceData.totalAmount.toLocaleString()}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                    {/* 小計・消費税・合計（右寄せ） */}
+                                    <div style={{display: 'flex', justifyContent: 'flex-end', marginBottom: '24px'}}>
+                                        <div style={{width: '220px'}}>
+                                            <div style={{display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '12px', color: '#666666'}}>
+                                                <span>小計（税抜）</span><span>¥{invoiceData.subTotal.toLocaleString()}</span>
+                                            </div>
+                                            <div style={{display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '12px', color: '#666666'}}>
+                                                <span>消費税（10%）</span><span>¥{invoiceData.tax.toLocaleString()}</span>
+                                            </div>
+                                            <div style={{display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontWeight: '500', color: '#000000', borderTop: '1px solid #cccccc', marginTop: '4px'}}>
+                                                <span>合計（税込）</span><span>¥{invoiceData.totalAmount.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 振込先（上下細線） */}
+                                    {(profile.bankName || profile.bankNumber) && (
+                                        <div style={{borderTop: '0.5px solid #cccccc', borderBottom: '0.5px solid #cccccc', padding: '14px 0', marginBottom: '16px'}}>
+                                            <div style={{fontSize: '11px', color: '#666666', marginBottom: '10px'}}>下記口座へお振り込みをよろしくお願いいたします。</div>
+                                            <div style={{display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 20px', fontSize: '13px'}}>
+                                                {profile.bankName && <><span style={{color: '#666666'}}>銀行名</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankName}</span></>}
+                                                {profile.branchName && <><span style={{color: '#666666'}}>支店名</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.branchName}</span></>}
+                                                {profile.bankType && <><span style={{color: '#666666'}}>口座種別</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankType}</span></>}
+                                                {profile.bankNumber && <><span style={{color: '#666666'}}>口座番号</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankNumber}</span></>}
+                                                {profile.bankHolder && <><span style={{color: '#666666'}}>口座名義</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankHolder}</span></>}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* 一言メッセージ */}
+                                    <div style={{textAlign: 'center', fontSize: '12px', color: '#666666'}}>
+                                        先月もありがとうございました。今後とも何卒よろしくお願いいたします。
+                                    </div>
+
+                                </div>
+
+                                <div className="space-y-3 no-print">
+                                    {/* 送信ボタン */}
+                                    <button
+                                        onClick={handleSendInvoice}
+                                        disabled={sendStatus === 'sending'}
+                                        className="w-full py-5 rounded-3xl font-black text-lg shadow-xl transition transform hover:-translate-y-1"
+                                        style={{
+                                            background: sendStatus === 'ok' ? '#5b9e6e' : sendStatus === 'error' ? '#e05050' : 'linear-gradient(135deg, #3a7bd5, #5a9ee0)',
+                                            color: 'white'
+                                        }}
+                                    >
+                                        {sendStatus === 'sending' ? '📤 送信中…' : sendStatus === 'ok' ? '✓ 送信完了！野田さんに提出済。' : sendStatus === 'error' ? '❌ 送信失敗（URLを確認してね）' : '📤 業務委託請求書（PDF）を送信する'}
+                                    </button>
+
+                                    {/* 印刷リンク */}
+                                    <div className="text-center">
+                                        <button onClick={() => window.print()} className="text-sm underline" style={{color: '#a06040', background: 'none', border: 'none', cursor: 'pointer'}}>
+                                            🖨️ 印刷はこちら（任意）
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* モバイルナビ */}
+                    <div className="fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t p-3 flex justify-around md:hidden no-print z-50" style={{background: 'rgba(255,252,251,0.95)', borderColor: '#f9d4b4'}}>
+                        {navItems.map(v => (
+                            <button key={v.id} onClick={() => setCurrentView(v.id)} className="text-[10px] font-black uppercase tracking-widest" style={currentView === v.id ? {color: '#e07840'} : {color: '#f9c8a0'}}>
+                                {v.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
