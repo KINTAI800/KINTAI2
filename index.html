@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>請求書_2026年</title>
+    <title>請求書_2026</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -70,21 +70,41 @@
                 const saved = localStorage.getItem('staff_profile_v1');
                 return saved ? JSON.parse(saved) : {
                     name: '', zip: '', address: '', tel: '',
-                    bankName: '', branchName: '', bankType: '普通', bankNumber: '', bankHolder: ''
+                    bankName: '', bankCode: '', branchName: '', branchCode: '',
+                    bankType: '普通', bankNumber: '', bankHolder: ''
                 };
             });
             const [profileSaved, setProfileSaved] = useState(false);
             const [zipStatus, setZipStatus] = useState('');
-            const [sendStatus, setSendStatus] = useState(''); // '' | 'sending' | 'ok' | 'error'
+            const [sendStatus, setSendStatus] = useState('');
+            const [confirmDialog, setConfirmDialog] = useState(null); // {message, onOk}
             const GAS_URL = localStorage.getItem('gas_url') || '';
+
+            const showConfirm = (message, onOk) => {
+                setConfirmDialog({ message, onOk });
+            };
+
+            // マスト項目チェック
+            const getMissingFields = () => {
+                const missing = [];
+                if (!profile.name) missing.push('氏名');
+                if (!profile.zip) missing.push('郵便番号');
+                if (!profile.address) missing.push('住所');
+                if (!profile.tel) missing.push('電話番号');
+                if (!profile.bankType) missing.push('口座種別');
+                if (!profile.bankNumber) missing.push('口座番号');
+                if (!profile.bankHolder) missing.push('口座名義');
+                return missing;
+            };
 
             const handleSendInvoice = async () => {
                 if (!GAS_URL) {
                     alert('GAS URLが設定されていません。請求書画面の設定から入力してください。');
                     return;
                 }
-                if (!profile.name) {
-                    alert('プロフィールに氏名を登録してください。');
+                const missing = getMissingFields();
+                if (missing.length > 0) {
+                    alert(`以下の項目をプロフィールに登録してください：\n・${missing.join('\n・')}`);
                     return;
                 }
                 if (invoiceData.filtered.length === 0) {
@@ -365,10 +385,12 @@
                                                     <div>
                                                         <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>銀行名</label>
                                                         <input type="text" style={inputStyle} className={inputClass} value={profile.bankName} onChange={(e) => setProfile({...profile, bankName: e.target.value})} placeholder="例：○○銀行" />
+                                                        <input type="text" style={{...inputStyle, marginTop: '6px', fontSize: '12px', padding: '8px 12px'}} className="w-full border-2 rounded-2xl font-bold outline-none transition" value={profile.bankCode || ''} onChange={(e) => setProfile({...profile, bankCode: e.target.value})} placeholder="銀行番号（任意）" />
                                                     </div>
                                                     <div>
                                                         <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>支店名</label>
                                                         <input type="text" style={inputStyle} className={inputClass} value={profile.branchName} onChange={(e) => setProfile({...profile, branchName: e.target.value})} placeholder="例：△△支店" />
+                                                        <input type="text" style={{...inputStyle, marginTop: '6px', fontSize: '12px', padding: '8px 12px'}} className="w-full border-2 rounded-2xl font-bold outline-none transition" value={profile.branchCode || ''} onChange={(e) => setProfile({...profile, branchCode: e.target.value})} placeholder="支店番号（任意）" />
                                                     </div>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-4">
@@ -423,13 +445,11 @@
                                             <div>
                                                 <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>勤務形態</label>
                                                 <div className="flex p-1 rounded-2xl flex-wrap gap-1" style={{background: '#f9d4b4'}}>
-                                                    {['フロント', 'カフェ', 'ツアー', '物販', '手入力'].map(t => (
+                                                    {['カフェ', 'フロント', 'ツアー', '物販', '手入力'].map(t => (
                                                         <button key={t} onClick={() => {
-                                                            // 今の時間を保存
                                                             if (['フロント','カフェ','物販'].includes(formData.type)) {
                                                                 setTimeByType(prev => ({...prev, [formData.type]: { startH: formData.startH, startM: formData.startM, endH: formData.endH, endM: formData.endM }}));
                                                             }
-                                                            // 切り替え先の時間を読み込む
                                                             const savedTime = ['フロント','カフェ','物販'].includes(t) ? timeByType[t] : { startH: formData.startH, startM: formData.startM, endH: formData.endH, endM: formData.endM };
                                                             setFormData({...formData, type: t, ...savedTime});
                                                         }} className="flex-1 py-3 text-xs font-black rounded-xl transition" style={formData.type === t ? {background: 'white', color: '#e07840', boxShadow: '0 1px 4px rgba(0,0,0,0.1)'} : {color: '#a06040'}}>{t}</button>
@@ -476,7 +496,7 @@
                                                         {HOURS.map(h => <option key={h} value={h}>{h}時</option>)}
                                                     </select>
                                                     <select value={formData.startM} onChange={(e) => setFormData({...formData, startM: e.target.value})} className="flex-1 p-4 rounded-2xl border-2 text-center font-bold outline-none" style={inputStyle}>
-                                                        {(formData.type === 'カフェ' ? ['00', '30'] : MINUTES).map(m => <option key={m} value={m}>{m}分</option>)}
+                                                        {(formData.type === 'カフェ' ? ['00', '30'] : formData.type === 'フロント' ? ['00', '10', '20', '30', '40', '50'] : MINUTES).map(m => <option key={m} value={m}>{m}分</option>)}
                                                     </select>
                                                 </div>
                                             </div>
@@ -487,7 +507,7 @@
                                                         {HOURS.map(h => <option key={h} value={h}>{h}時</option>)}
                                                     </select>
                                                     <select value={formData.endM} onChange={(e) => setFormData({...formData, endM: e.target.value})} className="flex-1 p-4 rounded-2xl border-2 text-center font-bold outline-none" style={inputStyle}>
-                                                        {(formData.type === 'カフェ' ? ['00', '30'] : MINUTES).map(m => <option key={m} value={m}>{m}分</option>)}
+                                                        {(formData.type === 'カフェ' ? ['00', '30'] : formData.type === 'フロント' ? ['00', '10', '20', '30', '40', '50'] : MINUTES).map(m => <option key={m} value={m}>{m}分</option>)}
                                                     </select>
                                                 </div>
                                             </div>
@@ -538,11 +558,10 @@
                                             </div>
                                             {selectedMonth && (
                                                 <button
-                                                    onClick={() => {
-                                                        if (window.confirm(`${selectedMonth}のデータを全件削除しますか？`)) {
-                                                            setRecords(records.filter(r => !r.date.startsWith(selectedMonth)));
-                                                        }
-                                                    }}
+                                                    onClick={() => showConfirm(
+                                                        `${selectedMonth}のデータを全件削除しますか？\nこの操作は元に戻せません。`,
+                                                        () => setRecords(records.filter(r => !r.date.startsWith(selectedMonth)))
+                                                    )}
                                                     className="text-xs underline"
                                                     style={{color: '#f09060', background: 'none', border: 'none', cursor: 'pointer'}}
                                                 >
@@ -616,7 +635,7 @@
                                                 <tr key={r.id} className="border-b transition" style={{borderColor: '#fdeede'}}>
                                                     <td className="py-4 px-2 font-bold" style={{color: '#7c3d1a'}}>{r.date.split('-').slice(1).join('/')}</td>
                                                     <td className="py-4 text-xs font-black" style={{color: '#a06040'}}>{r.type}</td>
-                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド報酬' : r.type === '手入力' ? (r.manualLabel || '手入力') : `${r.startTime}〜${r.endTime}`}</td>
+                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド' : r.type === '手入力' ? (r.manualLabel || '手入力') : `${r.startTime}〜${r.endTime}`}</td>
                                                     <td className="py-4 text-right font-mono font-bold" style={{color: '#7c3d1a'}}>{r.type === 'ツアー' ? `${r.guests}名` : r.type === '手入力' ? '1' : `${r.hours || 1}h`}</td>
                                                    <td className="py-4 text-right font-black italic" style={{color: '#7c3d1a'}}>¥{r.amount.toLocaleString()}</td>
                                                 </tr>
@@ -636,7 +655,7 @@
                             <div className="space-y-6">
                                 <div className="p-8 rounded-3xl shadow-xl no-print mb-6" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
                                     <h2 className="text-xs font-black uppercase tracking-widest mb-1" style={{color: '#a06040'}}>請求書発行設定</h2><div className="space-y-1">
-<p style={{color:'red', fontWeight:'bold', fontSize:'12px', marginTop:'1px'}}>⚠️ 提出期限：毎月５日</p>
+<p style={{color:'red', fontWeight:'bold', fontSize:'12px', marginTop:'1px'}}>⚠️ 提出期限：毎月10日</p>
 
 <div><label className="text-[10px] font-black uppercase tracking-widest block mb-2" style={{color: '#a06040'}}>対象月</label>
                                             <input type="month" className="w-full p-3 border-2 rounded-xl font-bold outline-none" style={{background: '#fff4ed', borderColor: '#f9d4b4'}} value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} /></div>
@@ -699,7 +718,7 @@
                                         <tbody>
                                             <tr style={{borderBottom: '0.5px solid #cccccc'}}>
                                                 <td style={{padding: '14px 4px', fontWeight: '500', color: '#000000'}}>
-                                                  26年 {parseInt(selectedMonth.split('-')[1])}月 運営協力費
+                                                    26年{parseInt(selectedMonth.split('-')[1])}月 運営協力費
                                                 </td>
                                                 <td style={{padding: '14px 4px', textAlign: 'right', color: '#000000'}}>
                                                     ¥{invoiceData.subTotal.toLocaleString()}
@@ -731,8 +750,8 @@
                                         <div style={{borderTop: '0.5px solid #cccccc', borderBottom: '0.5px solid #cccccc', padding: '14px 0', marginBottom: '16px'}}>
                                             <div style={{fontSize: '11px', color: '#666666', marginBottom: '10px'}}>下記口座へお振り込みをよろしくお願いいたします。</div>
                                             <div style={{display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 20px', fontSize: '13px'}}>
-                                                {profile.bankName && <><span style={{color: '#666666'}}>銀行名</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankName}</span></>}
-                                                {profile.branchName && <><span style={{color: '#666666'}}>支店名</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.branchName}</span></>}
+                                                {profile.bankName && <><span style={{color: '#666666'}}>銀行名</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankName}{profile.bankCode ? `（${profile.bankCode}）` : ''}</span></>}
+                                                {profile.branchName && <><span style={{color: '#666666'}}>支店名</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.branchName}{profile.branchCode ? `（${profile.branchCode}）` : ''}</span></>}
                                                 {profile.bankType && <><span style={{color: '#666666'}}>口座種別</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankType}</span></>}
                                                 {profile.bankNumber && <><span style={{color: '#666666'}}>口座番号</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankNumber}</span></>}
                                                 {profile.bankHolder && <><span style={{color: '#666666'}}>口座名義</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankHolder}</span></>}
@@ -773,12 +792,40 @@
                     </main>
 
                     {/* モバイルナビ */}
-                    <div className="fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t p-3 flex justify-around md:hidden no-print z-50" style={{background: 'rgba(255,252,251,0.95)', borderColor: '#f9d4b4'}}>
-                        {navItems.map(v => (
-                            <button key={v.id} onClick={() => setCurrentView(v.id)} className="text-[10px] font-black uppercase tracking-widest" style={currentView === v.id ? {color: '#e07840'} : {color: '#f9c8a0'}}>
-                                {v.label}
-                            </button>
-                        ))}
+                    {/* 独自確認ダイアログ */}
+                    {confirmDialog && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background: 'rgba(0,0,0,0.5)'}}>
+                            <div className="mx-4 p-8 rounded-3xl shadow-2xl max-w-sm w-full" style={{background: '#fffaf7', border: '2px solid #f9d4b4'}}>
+                                <p className="font-black text-center mb-6 whitespace-pre-line" style={{color: '#7c3d1a'}}>{confirmDialog.message}</p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setConfirmDialog(null)}
+                                        className="flex-1 py-3 rounded-2xl font-black text-sm"
+                                        style={{background: '#f9d4b4', color: '#a06040'}}
+                                    >キャンセル</button>
+                                    <button
+                                        onClick={() => { confirmDialog.onOk(); setConfirmDialog(null); }}
+                                        className="flex-1 py-3 rounded-2xl font-black text-sm text-white"
+                                        style={{background: '#e05050'}}
+                                    >削除する</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* モバイルナビ（スマホ最適化） */}
+                    <div className="fixed bottom-0 left-0 right-0 backdrop-blur-xl border-t no-print z-40" style={{background: 'rgba(255,250,247,0.97)', borderColor: '#f9d4b4'}}>
+                        <div className="flex justify-around items-center" style={{paddingBottom: 'env(safe-area-inset-bottom)', paddingTop: '8px', paddingBottom: 'calc(env(safe-area-inset-bottom) + 8px)'}}>
+                            {navItems.map(v => (
+                                <button key={v.id} onClick={() => setCurrentView(v.id)}
+                                    className="flex flex-col items-center gap-1 py-1 px-2"
+                                    style={currentView === v.id ? {color: '#e07840'} : {color: '#f9c8a0'}}
+                                >
+                                    <span style={{fontSize: '20px'}}>{v.label.split(' ')[0]}</span>
+                                    <span style={{fontSize: '9px', fontWeight: '800'}}>{v.label.split(' ')[1] || v.label}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
             );
