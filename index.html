@@ -636,7 +636,7 @@
                             <div className="space-y-6">
                                 <div className="p-8 rounded-3xl shadow-xl no-print mb-6" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
                                     <h2 className="text-xs font-black uppercase tracking-widest mb-1" style={{color: '#a06040'}}>請求書発行設定</h2><div className="space-y-1">
-<p style={{color:'red', fontWeight:'bold', fontSize:'12px', marginTop:'1px'}}>⚠️ 提出期限：毎月10日</p>
+<p style={{color:'red', fontWeight:'bold', fontSize:'12px', marginTop:'1px'}}>⚠️ 提出期限：毎月５日</p>
 
 <div><label className="text-[10px] font-black uppercase tracking-widest block mb-2" style={{color: '#a06040'}}>対象月</label>
                                             <input type="month" className="w-full p-3 border-2 rounded-xl font-bold outline-none" style={{background: '#fff4ed', borderColor: '#f9d4b4'}} value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} /></div>
@@ -699,7 +699,7 @@
                                         <tbody>
                                             <tr style={{borderBottom: '0.5px solid #cccccc'}}>
                                                 <td style={{padding: '14px 4px', fontWeight: '500', color: '#000000'}}>
-                                                    {parseInt(selectedMonth.split('-')[1])}月 運営協力費
+                                                  26年 {parseInt(selectedMonth.split('-')[1])}月 運営協力費
                                                 </td>
                                                 <td style={{padding: '14px 4px', textAlign: 'right', color: '#000000'}}>
                                                     ¥{invoiceData.subTotal.toLocaleString()}
