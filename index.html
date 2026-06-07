@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>請求書_2026</title>
+    <title>勤怠請求書_2026</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -69,7 +69,7 @@
             const [profile, setProfile] = useState(() => {
                 const saved = localStorage.getItem('staff_profile_v1');
                 return saved ? JSON.parse(saved) : {
-                    name: '', zip: '', address: '', tel: '',
+                    name: '', zip: '', address: '', tel: '', invoiceNo: '',
                     bankName: '', bankCode: '', branchName: '', branchCode: '',
                     bankType: '普通', bankNumber: '', bankHolder: ''
                 };
@@ -256,10 +256,10 @@
             };
 
             const invoiceData = useMemo(() => {
-                const myName = profile.name;
-                const filtered = records.filter(r => r.name === myName && r.date.startsWith(selectedMonth))
+                if (!selectedMonth) return { filtered: [], totalAmount: 0, subTotal: 0, tax: 0, totalHours: 0 };
+                const filtered = records.filter(r => r.date.startsWith(selectedMonth))
                     .sort((a, b) => new Date(a.date) - new Date(b.date));
-                const totalAmount = filtered.reduce((sum, r) => sum + r.amount, 0);
+                const totalAmount = filtered.reduce((sum, r) => sum + (r.amount || 0), 0);
                 const subTotal = Math.round(totalAmount / 1.1);
                 return {
                     filtered,
@@ -268,7 +268,22 @@
                     tax: totalAmount - subTotal,
                     totalHours: filtered.reduce((sum, r) => sum + (r.hours ? parseFloat(r.hours) : 0), 0)
                 };
-            }, [records, profile.name, selectedMonth]);
+            }, [records, selectedMonth]);
+
+            // 当月・先月のみ入力可能
+            const getAllowedMonths = () => {
+                const now = new Date();
+                const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                const lastDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                const lastMonth = `${lastDate.getFullYear()}-${String(lastDate.getMonth() + 1).padStart(2, '0')}`;
+                return [thisMonth, lastMonth];
+            };
+
+            const isDateAllowed = (dateStr) => {
+                if (!dateStr) return false;
+                const month = dateStr.substring(0, 7);
+                return getAllowedMonths().includes(month);
+            };
 
             const inputClass = "w-full p-4 border-2 rounded-2xl font-bold outline-none transition focus:border-[#e07840]";
             const inputStyle = { background: '#fff4ed', borderColor: '#f9d4b4' };
@@ -278,7 +293,7 @@
                 {id: 'profile', label: '👤 登録'},
                 {id: 'input', label: '✏️ 入力'},
                 {id: 'history', label: '📋 履歴'},
-                {id: 'detail', label: '🔍 詳細'},
+                {id: 'detail', label: '📝 明細'},
                 {id: 'invoice', label: '📄 請求書'}
             ];
 
@@ -375,6 +390,11 @@
                                                     <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>電話番号</label>
                                                     <input type="tel" style={inputStyle} className={inputClass} value={profile.tel} onChange={(e) => setProfile({...profile, tel: e.target.value})} placeholder="例：090-1234-5678" />
                                                 </div>
+                                                {/* インボイス登録番号 */}
+                                                <div>
+                                                    <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>インボイス登録番号（任意）</label>
+                                                    <input type="text" style={inputStyle} className={inputClass} value={profile.invoiceNo || ''} onChange={(e) => setProfile({...profile, invoiceNo: e.target.value})} placeholder="例：T1234567890123" />
+                                                </div>
                                             </div>
                                         </div>
 
@@ -433,7 +453,15 @@
                                         <div className="space-y-6">
                                             <div>
                                                 <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>日付</label>
-                                                <input type="date" style={inputStyle} className={inputClass} value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
+                                                <input type="date" style={inputStyle} className={inputClass} value={formData.date} onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    if (!isDateAllowed(val)) {
+                                                        alert('入力できるのは当月・先月のみです。');
+                                                        return;
+                                                    }
+                                                    setFormData({...formData, date: val});
+                                                }} />
+                                                {!isDateAllowed(formData.date) && <p className="text-[10px] mt-1" style={{color: 'red'}}>⚠️ 当月・先月のみ入力できます</p>}
                                             </div>
                                             <div>
                                                 <label className="block text-[10px] font-black uppercase mb-2 tracking-widest" style={{color: '#a06040'}}>氏名</label>
@@ -635,7 +663,7 @@
                                                 <tr key={r.id} className="border-b transition" style={{borderColor: '#fdeede'}}>
                                                     <td className="py-4 px-2 font-bold" style={{color: '#7c3d1a'}}>{r.date.split('-').slice(1).join('/')}</td>
                                                     <td className="py-4 text-xs font-black" style={{color: '#a06040'}}>{r.type}</td>
-                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド' : r.type === '手入力' ? (r.manualLabel || '手入力') : `${r.startTime}〜${r.endTime}`}</td>
+                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド報酬' : r.type === '手入力' ? (r.manualLabel || '手入力') : `${r.startTime}〜${r.endTime}`}</td>
                                                     <td className="py-4 text-right font-mono font-bold" style={{color: '#7c3d1a'}}>{r.type === 'ツアー' ? `${r.guests}名` : r.type === '手入力' ? '1' : `${r.hours || 1}h`}</td>
                                                    <td className="py-4 text-right font-black italic" style={{color: '#7c3d1a'}}>¥{r.amount.toLocaleString()}</td>
                                                 </tr>
@@ -665,7 +693,25 @@
                                         </div>
                                     </div>
                                     {!profile.name && <p className="text-xs font-bold mt-3" style={{color: '#f09060'}}>⚠ プロフィールに氏名を登録してください</p>}
+                                    {getMissingFields().length > 0 && (
+                                        <p className="text-xs font-bold mt-2" style={{color: '#e05050'}}>⚠ 未登録：{getMissingFields().join('・')}</p>
+                                    )}
                                 </div>
+
+                                {/* 全件時・マスト未入力時は請求書非表示 */}
+                                {!selectedMonth ? (
+                                    <div className="p-16 text-center rounded-3xl" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                        <p className="font-black text-lg" style={{color: '#a06040'}}>📅 対象月を選択してください</p>
+                                        <p className="text-xs mt-2" style={{color: '#f9c8a0'}}>請求書は月ごとに発行できます</p>
+                                    </div>
+                                ) : getMissingFields().length > 0 ? (
+                                    <div className="p-16 text-center rounded-3xl" style={{background: '#fffaf7', border: '1px solid #f9d4b4'}}>
+                                        <p className="font-black text-lg" style={{color: '#e05050'}}>⚠️ 登録情報が不足しています</p>
+                                        <p className="text-xs mt-2" style={{color: '#a06040'}}>未入力：{getMissingFields().join('・')}</p>
+                                        <p className="text-xs mt-1" style={{color: '#f9c8a0'}}>登録タブで入力・保存してから戻ってきてね</p>
+                                    </div>
+                                ) : (
+                                <>
 
                                 {/* 請求書本体（印刷対象） */}
                                 <div id="invoice-box" className="bg-white p-10 md:p-16 shadow-2xl text-black rounded-sm" style={{border: '1px solid #f9d4b4', minHeight: '297mm'}}>
@@ -697,6 +743,7 @@
                                             {profile.zip && <div style={{fontSize: '12px', color: '#666666'}}>〒{profile.zip}</div>}
                                             {profile.address && <div style={{fontSize: '12px', color: '#666666'}}>{profile.address}</div>}
                                             {profile.tel && <div style={{fontSize: '12px', color: '#666666'}}>TEL: {profile.tel}</div>}
+                                            {profile.invoiceNo && <div style={{fontSize: '12px', color: '#666666'}}>登録番号: {profile.invoiceNo}</div>}
                                         </div>
                                     </div>
 
@@ -787,6 +834,8 @@
                                         </button>
                                     </div>
                                 </div>
+                                </>
+                                )}
                             </div>
                         )}
                     </main>
