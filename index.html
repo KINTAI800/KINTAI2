@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>勤怠請求書_2026</title>
+    <title>請求書_2026</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -22,14 +22,19 @@
         @media print {
             .no-print { display: none !important; }
             body { background: white !important; margin: 0; padding: 0; }
-            @page { size: A4; margin: 12mm; }
-            #invoice-box { 
-                box-shadow: none !important; 
-                border: none !important; 
-                padding: 0 !important; 
+            @page { size: A4; margin: 10mm; }
+            #invoice-box {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
                 margin: 0 !important;
                 min-height: unset !important;
-                font-size: 11px;
+                font-size: 10px;
+                page-break-after: avoid;
+                page-break-inside: avoid;
+            }
+            #invoice-box * {
+                page-break-inside: avoid;
             }
         }
         .animate-success { animation: success-pulse 0.5s ease-out; }
@@ -80,8 +85,8 @@
             const [confirmDialog, setConfirmDialog] = useState(null); // {message, onOk}
             const GAS_URL = localStorage.getItem('gas_url') || '';
 
-            const showConfirm = (message, onOk) => {
-                setConfirmDialog({ message, onOk });
+            const showConfirm = (message, onOk, isDanger = false, okLabel = '送信する') => {
+                setConfirmDialog({ message, onOk, isDanger, okLabel });
             };
 
             // マスト項目チェック
@@ -112,57 +117,62 @@
                     return;
                 }
 
-                setSendStatus('sending');
+                showConfirm(
+                    `${selectedMonth.replace('-', '年')}月分　¥${invoiceData.totalAmount.toLocaleString()}\n\n送信後の修正及び後日報告は原則不可です。\nよろしいですか？`,
+                    async () => {
+                        setSendStatus('sending');
 
-                // 勤務形態別に集計
-                const byType = { フロント: {hours:0, amount:0}, カフェ: {hours:0, amount:0}, ツアー: {guests:0, amount:0}, 物販: {hours:0, amount:0} };
-                invoiceData.filtered.forEach(r => {
-                    if (r.type === 'ツアー') {
-                        byType.ツアー.guests += r.guests || 0;
-                        byType.ツアー.amount += r.amount;
-                    } else if (byType[r.type]) {
-                        byType[r.type].hours += parseFloat(r.hours || 0);
-                        byType[r.type].amount += r.amount;
+                        const byType = { フロント: {hours:0, amount:0}, カフェ: {hours:0, amount:0}, ツアー: {guests:0, amount:0}, 物販: {hours:0, amount:0}, 手入力: {amount:0} };
+                        invoiceData.filtered.forEach(r => {
+                            if (r.type === 'ツアー') {
+                                byType.ツアー.guests += r.guests || 0;
+                                byType.ツアー.amount += r.amount;
+                            } else if (r.type === '手入力') {
+                                byType.手入力.amount += r.amount;
+                            } else if (byType[r.type]) {
+                                byType[r.type].hours += parseFloat(r.hours || 0);
+                                byType[r.type].amount += r.amount;
+                            }
+                        });
+
+                        const payload = {
+                            name: profile.name,
+                            month: selectedMonth.replace('-', '年') + '月',
+                            frontHours:  Math.round(byType.フロント.hours * 100) / 100,
+                            frontAmount: byType.フロント.amount,
+                            cafeHours:   Math.round(byType.カフェ.hours * 100) / 100,
+                            cafeAmount:  byType.カフェ.amount,
+                            tourGuests:  byType.ツアー.guests,
+                            tourAmount:  byType.ツアー.amount,
+                            salesHours:  Math.round(byType.物販.hours * 100) / 100,
+                            salesAmount: byType.物販.amount,
+                            totalHours:  Math.round(invoiceData.totalHours * 100) / 100,
+                            totalAmount: invoiceData.totalAmount,
+                            zip:         profile.zip,
+                            address:     profile.address,
+                            tel:         profile.tel,
+                            bankName:    profile.bankName,
+                            branchName:  profile.branchName,
+                            bankType:    profile.bankType,
+                            bankNumber:  profile.bankNumber,
+                            bankHolder:  profile.bankHolder
+                        };
+
+                        try {
+                            await fetch(GAS_URL, {
+                                method: 'POST',
+                                mode: 'no-cors',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            setSendStatus('ok');
+                            setTimeout(() => setSendStatus(''), 4000);
+                        } catch (err) {
+                            setSendStatus('error');
+                            setTimeout(() => setSendStatus(''), 4000);
+                        }
                     }
-                });
-
-                const payload = {
-                    name: profile.name,
-                    month: selectedMonth.replace('-', '年') + '月',
-                    frontHours:  Math.round(byType.フロント.hours * 100) / 100,
-                    frontAmount: byType.フロント.amount,
-                    cafeHours:   Math.round(byType.カフェ.hours * 100) / 100,
-                    cafeAmount:  byType.カフェ.amount,
-                    tourGuests:  byType.ツアー.guests,
-                    tourAmount:  byType.ツアー.amount,
-                    salesHours:  Math.round(byType.物販.hours * 100) / 100,
-                    salesAmount: byType.物販.amount,
-                    totalHours:  Math.round(invoiceData.totalHours * 100) / 100,
-                    totalAmount: invoiceData.totalAmount,
-                    // プロフィール情報（PDF生成用）
-                    zip:         profile.zip,
-                    address:     profile.address,
-                    tel:         profile.tel,
-                    bankName:    profile.bankName,
-                    branchName:  profile.branchName,
-                    bankType:    profile.bankType,
-                    bankNumber:  profile.bankNumber,
-                    bankHolder:  profile.bankHolder
-                };
-
-                try {
-                    await fetch(GAS_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    setSendStatus('ok');
-                    setTimeout(() => setSendStatus(''), 4000);
-                } catch (err) {
-                    setSendStatus('error');
-                    setTimeout(() => setSendStatus(''), 4000);
-                }
+                );
             };
 
             // 勤務形態ごとの時間を独立管理
@@ -588,7 +598,9 @@
                                                 <button
                                                     onClick={() => showConfirm(
                                                         `${selectedMonth}のデータを全件削除しますか？\nこの操作は元に戻せません。`,
-                                                        () => setRecords(records.filter(r => !r.date.startsWith(selectedMonth)))
+                                                        () => setRecords(records.filter(r => !r.date.startsWith(selectedMonth))),
+                                                        true,
+                                                        '削除する'
                                                     )}
                                                     className="text-xs underline"
                                                     style={{color: '#f09060', background: 'none', border: 'none', cursor: 'pointer'}}
@@ -663,7 +675,7 @@
                                                 <tr key={r.id} className="border-b transition" style={{borderColor: '#fdeede'}}>
                                                     <td className="py-4 px-2 font-bold" style={{color: '#7c3d1a'}}>{r.date.split('-').slice(1).join('/')}</td>
                                                     <td className="py-4 text-xs font-black" style={{color: '#a06040'}}>{r.type}</td>
-                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド報酬' : r.type === '手入力' ? (r.manualLabel || '手入力') : `${r.startTime}〜${r.endTime}`}</td>
+                                                    <td className="py-4 text-xs font-medium" style={{color: '#e07840'}}>{r.type === 'ツアー' ? 'ツアーガイド' : r.type === '手入力' ? (r.manualLabel || '手入力') : `${r.startTime}〜${r.endTime}`}</td>
                                                     <td className="py-4 text-right font-mono font-bold" style={{color: '#7c3d1a'}}>{r.type === 'ツアー' ? `${r.guests}名` : r.type === '手入力' ? '1' : `${r.hours || 1}h`}</td>
                                                    <td className="py-4 text-right font-black italic" style={{color: '#7c3d1a'}}>¥{r.amount.toLocaleString()}</td>
                                                 </tr>
@@ -714,89 +726,90 @@
                                 <>
 
                                 {/* 請求書本体（印刷対象） */}
-                                <div id="invoice-box" className="bg-white p-10 md:p-16 shadow-2xl text-black rounded-sm" style={{border: '1px solid #f9d4b4', minHeight: '297mm'}}>
+                                <div id="invoice-box" className="bg-white text-black" style={{border: '1px solid #cccccc', padding: '40px 48px', boxShadow: '0 4px 24px rgba(0,0,0,0.08)'}}>
 
                                     {/* タイトル行 */}
-                                    <div className="flex justify-between items-start mb-4">
+                                    <div className="flex justify-between items-start" style={{marginBottom: '16px'}}>
                                         <div>
-                                            <div style={{fontSize: '28px', fontWeight: '500', color: '#000000'}}>請求書</div>
-                                            <div style={{fontSize: '11px', color: '#666666', marginTop: '2px'}}>INVOICE</div>
+                                            <div style={{fontSize: '36px', fontWeight: '500', color: '#000000', lineHeight: '1.1'}}>請求書</div>
+                                            <div style={{fontSize: '12px', color: '#666666', marginTop: '3px'}}>INVOICE</div>
                                         </div>
                                         <div style={{textAlign: 'right'}}>
-                                            <div style={{fontSize: '11px', color: '#666666', marginBottom: '3px'}}>発行日</div>
-                                            <div style={{fontWeight: '500', color: '#000000'}}>{new Date().toLocaleDateString('ja-JP')}</div>
+                                            <div style={{fontSize: '12px', color: '#666666', marginBottom: '3px'}}>発行日</div>
+                                            <div style={{fontSize: '14px', fontWeight: '500', color: '#000000'}}>{new Date().toLocaleDateString('ja-JP')}</div>
                                         </div>
                                     </div>
 
-                                    <hr style={{border: 'none', borderTop: '0.5px solid #cccccc', margin: '14px 0'}} />
+                                    <hr style={{border: 'none', borderTop: '0.5px solid #cccccc', margin: '16px 0'}} />
 
-                                    {/* 請求先・請求元 */}
-                                    <div className="flex justify-between mb-4">
+                                    {/* 請求先・請求人 */}
+                                    <div className="flex justify-between" style={{marginBottom: '20px'}}>
                                         <div>
-                                            <div style={{fontSize: '11px', color: '#666666', marginBottom: '3px'}}>請求先</div>
-                                            <div style={{fontSize: '18px', fontWeight: '500', color: '#000000'}}>株式会社イジュン 御中</div>
-                                            <div style={{fontSize: '12px', color: '#666666', marginTop: '8px'}}>下記の通り、ご請求申し上げます。</div>
+                                            <div style={{fontSize: '12px', color: '#666666', marginBottom: '4px'}}>請求先</div>
+                                            <div style={{fontSize: '22px', fontWeight: '500', color: '#000000'}}>株式会社イジュン 御中</div>
+                                            <div style={{fontSize: '13px', color: '#666666', marginTop: '10px'}}>下記の通り、ご請求申し上げます。</div>
                                         </div>
                                         <div style={{textAlign: 'right'}}>
-                                            <div style={{fontSize: '11px', color: '#666666', marginBottom: '3px'}}>請求元</div>
-                                            <div style={{fontWeight: '500', color: '#000000'}}>{profile.name || '（未登録）'}</div>
-                                            {profile.zip && <div style={{fontSize: '12px', color: '#666666'}}>〒{profile.zip}</div>}
-                                            {profile.address && <div style={{fontSize: '12px', color: '#666666'}}>{profile.address}</div>}
-                                            {profile.tel && <div style={{fontSize: '12px', color: '#666666'}}>TEL: {profile.tel}</div>}
-                                            {profile.invoiceNo && <div style={{fontSize: '12px', color: '#666666'}}>登録番号: {profile.invoiceNo}</div>}
+                                            <div style={{fontSize: '12px', color: '#666666', marginBottom: '4px'}}>請求人</div>
+                                            <div style={{fontSize: '16px', fontWeight: '500', color: '#000000'}}>{profile.name || '（未登録）'}</div>
+                                            {profile.zip && <div style={{fontSize: '13px', color: '#666666'}}>〒{profile.zip}</div>}
+                                            {profile.address && <div style={{fontSize: '13px', color: '#666666'}}>{profile.address}</div>}
+                                            {profile.tel && <div style={{fontSize: '13px', color: '#666666'}}>TEL: {profile.tel}</div>}
+                                            {profile.invoiceNo && <div style={{fontSize: '13px', color: '#666666'}}>登録番号: {profile.invoiceNo}</div>}
                                         </div>
                                     </div>
 
-                                    {/* ご請求金額（大きく・目立つ） */}
-                                    <div style={{borderBottom: '2px solid #000000', paddingBottom: '10px', marginBottom: '16px', display: 'flex', alignItems: 'baseline', gap: '16px'}}>
-                                        <span style={{fontSize: '13px', color: '#000000', fontWeight: '500'}}>ご請求金額（税込）</span>
-                                        <span style={{fontSize: '32px', fontWeight: '700', color: '#000000', letterSpacing: '-0.5px'}}>¥{invoiceData.totalAmount.toLocaleString()}-</span>
+                                    {/* ご請求金額 */}
+                                    <div style={{display: 'flex', alignItems: 'baseline', gap: '20px', padding: '14px 0 10px', marginTop: '8px'}}>
+                                        <span style={{fontSize: '15px', fontWeight: '500', color: '#000000'}}>ご請求金額（税込）</span>
+                                        <span style={{fontSize: '26px', fontWeight: '500', color: '#000000', letterSpacing: '-0.5px'}}>¥{invoiceData.totalAmount.toLocaleString()}-</span>
                                     </div>
+                                    <hr style={{border: 'none', borderTop: '2px solid #000000', margin: '0 0 16px'}} />
 
                                     {/* 明細テーブル */}
-                                    <table style={{width: '100%', borderCollapse: 'collapse', marginBottom: '12px'}}>
+                                    <table style={{width: '100%', borderCollapse: 'collapse', marginBottom: '8px'}}>
                                         <thead>
-                                            <tr style={{borderBottom: '1px solid #000000'}}>
-                                                <th style={{fontSize: '11px', color: '#666666', fontWeight: '400', padding: '6px 4px', textAlign: 'left'}}>項目・内容</th>
-                                                <th style={{fontSize: '11px', color: '#666666', fontWeight: '400', padding: '6px 4px', textAlign: 'right'}}>単価（税抜）</th>
-                                                <th style={{fontSize: '11px', color: '#666666', fontWeight: '400', padding: '6px 4px', textAlign: 'right'}}>金額（税込）</th>
+                                            <tr style={{borderBottom: '0.5px solid #cccccc'}}>
+                                                <th style={{fontSize: '12px', color: '#666666', fontWeight: '400', padding: '8px 4px', textAlign: 'left'}}>項目・内容</th>
+                                                <th style={{fontSize: '12px', color: '#666666', fontWeight: '400', padding: '8px 4px', textAlign: 'right'}}>単価（税抜）</th>
+                                                <th style={{fontSize: '12px', color: '#666666', fontWeight: '400', padding: '8px 4px', textAlign: 'right'}}>金額（税込）</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr style={{borderBottom: '0.5px solid #cccccc'}}>
-                                                <td style={{padding: '14px 4px', fontWeight: '500', color: '#000000'}}>
+                                                <td style={{padding: '16px 4px', fontWeight: '500', color: '#000000', fontSize: '15px'}}>
                                                     26年{parseInt(selectedMonth.split('-')[1])}月 運営協力費
                                                 </td>
-                                                <td style={{padding: '14px 4px', textAlign: 'right', color: '#000000'}}>
+                                                <td style={{padding: '16px 4px', textAlign: 'right', color: '#666666', fontSize: '15px'}}>
                                                     ¥{invoiceData.subTotal.toLocaleString()}
                                                 </td>
-                                                <td style={{padding: '14px 4px', textAlign: 'right', fontWeight: '500', color: '#000000'}}>
+                                                <td style={{padding: '16px 4px', textAlign: 'right', fontWeight: '500', color: '#000000', fontSize: '15px'}}>
                                                     ¥{invoiceData.totalAmount.toLocaleString()}
                                                 </td>
                                             </tr>
                                         </tbody>
                                     </table>
 
-                                    {/* 小計・消費税・合計（右寄せ） */}
-                                    <div style={{display: 'flex', justifyContent: 'flex-end', marginBottom: '24px'}}>
+                                    {/* 小計・消費税・合計 */}
+                                    <div style={{display: 'flex', justifyContent: 'flex-end', margin: '8px 0 20px'}}>
                                         <div style={{width: '220px'}}>
-                                            <div style={{display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '12px', color: '#666666'}}>
+                                            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#666666', padding: '4px 0'}}>
                                                 <span>小計（税抜）</span><span>¥{invoiceData.subTotal.toLocaleString()}</span>
                                             </div>
-                                            <div style={{display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '12px', color: '#666666'}}>
+                                            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#666666', padding: '4px 0'}}>
                                                 <span>消費税（10%）</span><span>¥{invoiceData.tax.toLocaleString()}</span>
                                             </div>
-                                            <div style={{display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontWeight: '500', color: '#000000', borderTop: '1px solid #cccccc', marginTop: '4px'}}>
+                                            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: '500', color: '#000000', borderTop: '0.5px solid #cccccc', padding: '10px 0', marginTop: '4px'}}>
                                                 <span>合計（税込）</span><span>¥{invoiceData.totalAmount.toLocaleString()}</span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* 振込先（上下細線） */}
+                                    {/* 振込先 */}
                                     {(profile.bankName || profile.bankNumber) && (
-                                        <div style={{borderTop: '0.5px solid #cccccc', borderBottom: '0.5px solid #cccccc', padding: '14px 0', marginBottom: '16px'}}>
-                                            <div style={{fontSize: '11px', color: '#666666', marginBottom: '10px'}}>下記口座へお振り込みをよろしくお願いいたします。</div>
-                                            <div style={{display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 20px', fontSize: '13px'}}>
+                                        <div style={{borderTop: '0.5px solid #cccccc', borderBottom: '0.5px solid #cccccc', padding: '14px 0', margin: '16px 0'}}>
+                                            <div style={{fontSize: '12px', color: '#666666', marginBottom: '10px'}}>下記口座へお振り込みをよろしくお願いいたします。</div>
+                                            <div style={{display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 16px', fontSize: '13px'}}>
                                                 {profile.bankName && <><span style={{color: '#666666'}}>銀行名</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankName}{profile.bankCode ? `（${profile.bankCode}）` : ''}</span></>}
                                                 {profile.branchName && <><span style={{color: '#666666'}}>支店名</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.branchName}{profile.branchCode ? `（${profile.branchCode}）` : ''}</span></>}
                                                 {profile.bankType && <><span style={{color: '#666666'}}>口座種別</span><span style={{fontWeight: '500', color: '#000000'}}>{profile.bankType}</span></>}
@@ -807,7 +820,7 @@
                                     )}
 
                                     {/* 一言メッセージ */}
-                                    <div style={{textAlign: 'center', fontSize: '12px', color: '#666666'}}>
+                                    <div style={{textAlign: 'center', fontSize: '12px', color: '#666666', marginTop: '16px'}}>
                                         先月もありがとうございました。今後とも何卒よろしくお願いいたします。
                                     </div>
 
@@ -845,7 +858,7 @@
                     {confirmDialog && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background: 'rgba(0,0,0,0.5)'}}>
                             <div className="mx-4 p-8 rounded-3xl shadow-2xl max-w-sm w-full" style={{background: '#fffaf7', border: '2px solid #f9d4b4'}}>
-                                <p className="font-black text-center mb-6 whitespace-pre-line" style={{color: '#7c3d1a'}}>{confirmDialog.message}</p>
+                                <p className="font-black text-center mb-6 whitespace-pre-line" style={{color: '#7c3d1a', fontSize: '14px', lineHeight: '1.7'}}>{confirmDialog.message}</p>
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => setConfirmDialog(null)}
@@ -855,8 +868,8 @@
                                     <button
                                         onClick={() => { confirmDialog.onOk(); setConfirmDialog(null); }}
                                         className="flex-1 py-3 rounded-2xl font-black text-sm text-white"
-                                        style={{background: '#e05050'}}
-                                    >削除する</button>
+                                        style={{background: confirmDialog.isDanger ? '#e05050' : 'linear-gradient(135deg, #3a7bd5, #5a9ee0)'}}
+                                    >{confirmDialog.okLabel || '送信する'}</button>
                                 </div>
                             </div>
                         </div>
