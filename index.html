@@ -82,6 +82,14 @@
             const [profileSaved, setProfileSaved] = useState(false);
             const [zipStatus, setZipStatus] = useState('');
             const [sendStatus, setSendStatus] = useState('');
+            const [sentMonths, setSentMonths] = useState(() => {
+                const saved = localStorage.getItem('sent_months_v1');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            useEffect(() => {
+                localStorage.setItem('sent_months_v1', JSON.stringify(sentMonths));
+            }, [sentMonths]);
             const [confirmDialog, setConfirmDialog] = useState(null); // {message, onOk}
             const GAS_URL = localStorage.getItem('gas_url') || '';
 
@@ -166,6 +174,7 @@
                                 body: JSON.stringify(payload)
                             });
                             setSendStatus('ok');
+                            setSentMonths(prev => prev.includes(selectedMonth) ? prev : [...prev, selectedMonth]);
                             setTimeout(() => setSendStatus(''), 4000);
                         } catch (err) {
                             setSendStatus('error');
@@ -698,9 +707,19 @@
 <p style={{color:'red', fontWeight:'bold', fontSize:'12px', marginTop:'1px'}}>⚠️ 提出期限：毎月10日</p>
 
 <div><label className="text-[10px] font-black uppercase tracking-widest block mb-2" style={{color: '#a06040'}}>対象月</label>
-                                            <input type="month" className="w-full p-3 border-2 rounded-xl font-bold outline-none" style={{background: '#fff4ed', borderColor: '#f9d4b4'}} value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} /></div>
+                                            <div className="flex items-center gap-3">
+                                                <input type="month" className="flex-1 p-3 border-2 rounded-xl font-bold outline-none" style={{
+                                                    background: sentMonths.includes(selectedMonth) ? '#d4edda' : '#fff4ed',
+                                                    borderColor: sentMonths.includes(selectedMonth) ? '#52b788' : '#f9d4b4',
+                                                    color: sentMonths.includes(selectedMonth) ? '#2d6a4f' : 'inherit'
+                                                }} value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+                                                {selectedMonth && sentMonths.includes(selectedMonth) && (
+                                                    <span className="font-black text-sm px-3 py-1 rounded-full whitespace-nowrap" style={{background: '#d4edda', color: '#2d6a4f'}}>✅ 送信済</span>
+                                                )}
+                                            </div>
+                                        </div>
                                         <div>
-<label className="text-[10px] font-black uppercase tracking-widest block mb-2" style={{color: '#a06040'}}>GAS URL（管理者から受け取ったURLを貼ってね）</label>
+<label className="text-[10px] font-black uppercase tracking-widest block mb-2" style={{color: '#a06040'}}>送信先URL（管理者から受け取ったURLを貼ってね）</label>
                                             <input type="url" className="w-full p-3 border-2 rounded-xl font-bold outline-none text-xs" style={{background: '#fff4ed', borderColor: '#f9d4b4'}} defaultValue={GAS_URL} onChange={(e) => localStorage.setItem('gas_url', e.target.value)} placeholder="https://script.google.com/macros/s/..." />
                                         </div>
                                     </div>
@@ -726,7 +745,7 @@
                                 <>
 
                                 {/* 請求書本体（印刷対象） */}
-                                <div id="invoice-box" className="bg-white text-black" style={{border: '1px solid #cccccc', padding: '40px 48px', boxShadow: '0 4px 24px rgba(0,0,0,0.08)'}}>
+                                <div id="invoice-box" className="bg-white text-black" style={{border: '1px solid #cccccc', padding: '40px 48px', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', minHeight: '297mm'}}>
 
                                     {/* タイトル行 */}
                                     <div className="flex justify-between items-start" style={{marginBottom: '16px'}}>
